@@ -1,0 +1,128 @@
+//spark-shell --packages "org.apache.poi:poi:3.17","org.apache.poi:poi-ooxml:3.17
+import org.apache.poi.ss.usermodel.Cell
+import org.apache.poi.ss.usermodel.{ DataFormatter, WorkbookFactory, Row }
+import java.io._
+import collection.JavaConversions._ 
+import org.apache.spark.sql._
+
+class Dataload{
+
+def DLoad(path: String, dataFormat:String) = {
+
+if(dataFormat.equals("csv"))
+{val df = spark.read.
+                    format("csv")
+                    .option("header","true")
+                    .option("inferSchema","true")
+                    .option("enforceSchema","false")
+                    .option("timestampFormat","yyyy-MM-dd'T'HH:mm;ss")
+                    .option("dateFormat", "yyyy-MM-dd") 
+                    .option("mode", "DROPMALFORMED")
+                    .load(path)
+
+var q = new Array[DataFrame](1)
+q(0) = df
+q
+} 
+
+if(dataFormat.equals("json"))
+{val df = spark.read.
+                    format("json")
+                    .option("timestampFormat","yyyy-MM-dd'T'HH:mm;ss")
+                    .option("dateFormat", "yyyy-MM-dd")
+                    .option("mode", "DROPMALFORMED")
+                    .load(path)
+var q = new Array[DataFrame](1)
+q(0) = df
+q
+} 
+
+
+if(dataFormat.equals("xml"))
+{val df = spark.read.
+                    format("com.databricks.spark.xml")
+                    .option("inferSchema","true")
+                    .option("mode", "DROPMALFORMED")
+                    .option("path", path)
+var q = new Array[DataFrame](1)
+q(0) = df
+q
+} 
+
+
+if(dataFormat.equals("excel"))
+{ try{
+   val myData = new File(path)
+   val workbook = WorkbookFactory.create(myData)
+   }
+  catch{
+       case e: Exception => e.printStackTrace()
+       }
+   val myData = new File(path)
+   val workbook = WorkbookFactory.create(myData)
+   var q = new Array[DataFrame](workbook.getNumberOfSheets)
+              
+       for(i <- 0 to workbook.getNumberOfSheets -1){
+                       var data = new StringBuffer()   
+                       val sheet = workbook.getSheetAt(i)
+                       val rowIterator = sheet.iterator()
+
+       while(rowIterator.hasNext){
+
+                         val row = rowIterator.next()
+
+                         val cellIterator = row.cellIterator()
+
+                    while(cellIterator.hasNext) {
+                                              val cell = cellIterator.next()
+                       cell.getCellType match {
+                                case Cell.CELL_TYPE_BOOLEAN =>  data.append(cell.getBooleanCellValue() + ",");
+
+                       
+                                case Cell.CELL_TYPE_NUMERIC => data.append(cell.getNumericCellValue() + ",");
+                                case Cell.CELL_TYPE_STRING => data.append(cell.getStringCellValue() + ",");
+                           
+                                case Cell.CELL_TYPE_BLANK => data.append("" + ",")
+                           
+                                case _ => data.append(cell + ",");
+
+                                               }
+ 
+                                               }
+                while(data.charAt(data.length -1) == ',')
+                 {data.deleteCharAt(data.length -1)
+                  } 
+
+
+      data.append("\r\n"); 
+                }
+              
+              val loc = path.substring(0, path.lastIndexOf("/")+1).concat("temp/").concat(sheet.getSheetName).concat(".csv")
+ 
+              val fos = new FileOutputStream(loc)
+              fos.write(data.toString().getBytes("UTF-8"));
+              fos.close();
+
+                                 
+               val df = spark.read.
+                    format("csv")
+                    .option("header","true")
+                    .option("inferSchema","true")
+                    .option("enforceSchema","false")
+                    .option("timestampFormat","yyyy-MM-dd'T'HH:mm;ss")
+                    .option("dateFormat", "yyyy-MM-dd") 
+                    .option("mode", "DROPMALFORMED")
+                    .load(loc)
+                 
+                    q(i) = df
+                          }
+
+q
+} 
+
+
+}
+
+
+
+}

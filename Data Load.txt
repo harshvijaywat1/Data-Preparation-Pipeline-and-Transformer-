@@ -1,0 +1,94 @@
+//spark - Spark Session
+import org.apache.spark.sql._
+import com.crealytics.spark.excel._
+
+class Dataload{
+
+def DLoad(path: String, dataFormat:String) = {
+
+if(dataFormat.equals("csv"))
+{val df = spark.read.
+                    format("csv")
+                    .option("header","true")
+                    .option("inferSchema","true")
+                    .option("enforceSchema","false")
+                    .option("timestampFormat","yyyy-MM-dd'T'HH:mm;ss")
+                    .option("dateFormat", "yyyy-MM-dd") 
+                    .option("mode", "DROPMALFORMED")
+                    .load(path)
+
+var q = new Array[DataFrame](1)
+q(0) = df
+q
+} 
+
+if(dataFormat.equals("json"))
+{val df = spark.read.
+                    format("json")
+                    .option("timestampFormat","yyyy-MM-dd'T'HH:mm;ss")
+                    .option("dateFormat", "yyyy-MM-dd")
+                    .option("mode", "DROPMALFORMED")
+                    .load(path)
+var q = new Array[DataFrame](1)
+q(0) = df
+q
+} 
+
+
+if(dataFormat.equals("xml"))
+{val df = spark.read.
+                    format("com.databricks.spark.xml")
+                    .option("inferSchema","true")
+                    .option("mode", "DROPMALFORMED")
+                    .option("path", path)
+var q = new Array[DataFrame](1)
+q(0) = df
+q
+} 
+
+
+if(dataFormat.equals("excel"))
+{ val sheetNames = WorkbookReader( Map(("path")-> path)
+                               , sc.hadoopConfiguration
+                               ).sheetNames
+   var q = new Array[DataFrame](sheetNames.length)
+              
+       for(i <- 0 to sheetNames.length -1){
+                       val df = spark.read
+                                     .format("com.crealytics.spark.excel")
+                                     .option("dataAddress", i.toString.concat("!")) 
+                                     .option("header", "true") 
+                                     .option("inferSchema", "false")  
+                                     .load(path)
+
+                 
+              val loc = path.substring(0, path.lastIndexOf("/")+1).concat("temp/").concat(i.toString)
+ 
+                   df.repartition(1).write
+                                  .format("csv")
+                                  .option("header", "true")
+                                   .mode("overwrite")
+                                  .save(loc) 
+
+                val df1 = spark.read.
+                    format("csv")
+                    .option("header","true")
+                    .option("inferSchema","true")
+                    .option("enforceSchema","false")
+                    .option("timestampFormat","yyyy-MM-dd'T'HH:mm;ss")
+                    .option("dateFormat", "yyyy-MM-dd") 
+                    .option("mode", "DROPMALFORMED")
+                    .load(loc)
+                 
+                    q(i) = df1
+                          }
+
+q
+} 
+
+
+}
+
+
+
+}

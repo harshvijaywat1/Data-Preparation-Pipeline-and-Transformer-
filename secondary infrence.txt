@@ -1,0 +1,172 @@
+import scala.util.matching.Regex
+import scala.util.matching._
+import org.apache.spark.sql.types._
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import util.control.Breaks._
+import org.apache.spark.sql._
+
+//dataframe = df
+
+case class MData(columnName: String, primary: String, secondary: String = "String") 
+
+def metaSchema(df : DataFrame, path : String) = { 
+val head = df.schema.toArray
+val numCol = head.length
+val records = df.rdd.collect       
+val numOfrecords = records.length
+ 
+
+var schemaArray = new Array[MData](numCol)  
+
+for(i <- 0 to numCol-1)
+{ var dataTypeArray = new Array[String](numOfrecords)  
+  for(j <- 0 to numOfrecords-1)
+  {
+     try{ if(head(i).dataType == TimestampType || head(i).dataType == DateType )
+              {dataTypeArray(j) = head(i).dataType.toString 
+              }
+           
+           else{
+     var tempRecord = records(j)(i).toString ; 
+       dataTypeArray(j) = typeDetector(tempRecord) ;
+               } 
+      }
+     catch{
+       case ae : NullPointerException => {dataTypeArray(j) = "null"}  
+       case e: Exception => breakable{ if(true)
+                                       break } 
+      } 
+   }
+
+ schemaArray(i) = MData(head(i).name, head(i).dataType.toString, finalType(dataTypeArray))
+
+}
+
+def isDate(inDate :String) : Boolean = {
+val possibleDateFormats = Array(
+"yyyy-MM-dd",
+"yyyy/MM/dd",
+"dd/MM/yyyy",
+"dd-MM-yyyy",
+"MM-dd-yyyy",
+"MM/dd/yyyy",
+"yyyy/dd/MM",
+"yyyy-dd-MM",
+"dd/yyyy/MM",
+"dd-yyyy-MM",
+"MM/yyyy/dd",
+"MM-yyyy-dd",
+"yyyy-MMMM-dd",
+"yyyy/MMMM/dd",
+"dd/MMMM/yyyy",
+"dd-MMMM-yyyy",
+"MMMM-dd-yyyy",
+"MMMM/dd/yyyy",
+"yyyy/dd/MMMM",
+"yyyy-dd-MMMM",
+"dd/yyyy/MMMM",
+"dd-yyyy-MMMM",
+"MMMM/yyyy/dd",
+"MMMM-yyyy-dd",
+"yyyy MM dd",
+"yyyy dd MM",
+"dd yyyy MM",
+"dd MM yyyy",
+"MM dd yyyy",
+"MM yyyy dd",
+"yyyy MMMM dd",
+"yyyy dd MMMM",
+"dd yyyy MMMM",
+"dd MMMM yyyy",
+"MMMM dd yyyy",
+"MMMM yyyy dd",
+"yyyy.MM.dd G 'at' HH:mm:ss z",
+"EEE, MMM d, ''yy",
+"h:mm a",
+"hh 'o''clock' a, zzzz",
+"K:mm a, z",
+"yyyyy.MMMMM.dd GGG hh:mm aaa",
+"EEE, d MMM yyyy HH:mm:ss Z",
+"yyMMddHHmmssZ",
+"yyyy-MM-dd'T'HH:mm:ss.SSSZ",
+"yyyy-MM-dd'T'HH:mm:ss.SSSXXX",
+"YYYY-'W'ww-u",
+"EEE, dd MMM yyyy HH:mm:ss z", 
+"EEE, dd MMM yyyy HH:mm zzzz",
+"yyyy-MM-dd'T'HH:mm:ssZ",
+"yyyy-MM-dd'T'HH:mm:ss.SSSzzzz", 
+"yyyy-MM-dd'T'HH:mm:sszzzz",
+"yyyy-MM-dd'T'HH:mm:ss z",
+"yyyy-MM-dd'T'HH:mm:ssz", 
+"yyyy-MM-dd'T'HH:mm:ss",
+"yyyy-MM-dd'T'HHmmss.SSSz",
+"yyyyMMdd"
+                    )
+
+
+
+try {
+            DateUtils.parseDate(inDate, possibleDateFormats);
+         true }
+catch{
+case pe: ParseException => false }
+}
+
+
+
+
+
+
+
+
+def finalType(dataTypes : Array[String]) = {
+        var maxCounter:Int= 0;
+        var element : String = dataTypes(0) ;
+        for (i <- 0 to dataTypes.length-1) {
+        var counter : Int = 1;
+            for (j <- 0 to dataTypes.length-1) {
+                if(dataTypes(i)==dataTypes(j)){
+                    counter = counter + 1;
+                }
+            }
+            if(maxCounter<counter){
+                maxCounter=counter;
+                element = dataTypes(i);
+            }
+        }
+       element 
+    }
+           
+           
+      
+def typeDetector(record :String) : String = {
+if(isDate(record))
+     { "DateType" ; 
+     }
+else{val email = """^[\w.%-]+@[-.\w]+\.[A-Za-z]{2,4}$""".r
+val countrycode = """^[A-Z]{2,3}$""".r
+val geoLocation = """^[A-Z]{1}[a-z]+, [A-Z]{1}[a-z]+$""".r
+val geoCordinates = """^[-+]?([1-8]?\d(\.\d+)?|90(\.0+)?),\s*[-+]?(180(\.0+)?|((1[0-7]\d)|([1-9]?\d))(\.\d+)?)$""".r
+val currency = """^(\p{Sc}(\d+|\d*\.[0-9]*))|((\d+|\d*\.[0-9]*)\p{Sc})$""".r
+val integer = """^(\+|-)?\d+$""".r
+val double = """^(\+|-)?\d*\.[0-9]*$""".r
+
+record match{
+case email(_*) => "Email"
+case integer(_*) => "Integer"
+case double(_*) => "Double"
+case currency(_*) => "Currency"
+case geoCordinates(_*) => "Geolocation Coordinates"
+case countrycode(_*) => "Country Code"
+case geoLocation(_*) => "Geo Location"
+case _ => "String"
+}
+}
+}
+
+import spark.implicits._
+val retDf = schemaArray.toSeq.toDS()
+retDf.coalesce(1).write.json(path)
+
+}

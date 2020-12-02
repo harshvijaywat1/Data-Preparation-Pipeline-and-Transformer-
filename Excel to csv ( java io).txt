@@ -1,0 +1,55 @@
+//spark-shell --packages "org.apache.poi:poi:3.17","org.apache.poi:poi-ooxml:3.17
+import org.apache.poi.ss.usermodel.Cell
+import org.apache.poi.ss.usermodel.{ DataFormatter, WorkbookFactory, Row }
+import java.io._
+import collection.JavaConversions._ 
+
+var data = new StringBuffer()
+try{
+val myData = new File("/home/harsh/Desktop/excel/datasets_618778_1105108_ExcelTestData1.xlsx")
+
+val workbook = WorkbookFactory.create(myData)
+val sheet = workbook.getSheetAt(0)
+val rowIterator = sheet.iterator()
+
+while(rowIterator.hasNext){
+
+val row = rowIterator.next()
+
+  val cellIterator = row.cellIterator()
+
+  while(cellIterator.hasNext) {
+    val cell = cellIterator.next()
+      cell.getCellType match {
+                                case Cell.CELL_TYPE_BOOLEAN =>  data.append(cell.getBooleanCellValue() + ",");
+
+                       
+  case Cell.CELL_TYPE_NUMERIC => data.append(cell.getNumericCellValue() + ",");
+ case Cell.CELL_TYPE_STRING => data.append(cell.getStringCellValue() + ",");
+                           
+  case Cell.CELL_TYPE_BLANK => data.append("" + ",")
+                           
+   case _ => data.append(cell + ",");
+
+      }
+ 
+  }
+while(data.charAt(data.length -1) == ',')
+{data.deleteCharAt(data.length -1)
+}
+
+
+data.append("\r\n"); 
+  }
+
+
+val fos = new FileOutputStream("/home/harsh/Desktop/excel/temp/y.csv")
+fos.write(data.toString().getBytes("UTF-8"));
+fos.close();
+
+}
+
+catch{
+case e: Exception => e.printStackTrace()
+}
+

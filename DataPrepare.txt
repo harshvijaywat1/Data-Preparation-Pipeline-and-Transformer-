@@ -1,0 +1,126 @@
+import org.apache.spark.sql._
+import org.apache.spark.sql.types._
+import com.johnsnowlabs.nlp.annotator._
+import com.johnsnowlabs.nlp.base._
+import org.apache.spark.ml.Pipeline
+import org.apache.spark.sql.SparkSession
+import spark.implicits._
+import org.apache.spark.ml.feature.VectorAssembler
+import org.apache.spark.ml.linalg.Vectors
+import org.apache.spark.ml.feature.{HashingTF, IDF, Tokenizer}
+import org.apache.spark.ml.linalg.Vector
+import org.apache.spark.ml.util._
+import org.apache.spark.ml.param._
+import org.apache.spark.ml._
+
+class DataPrepare(override val uid: String) extends Transformer{
+def this() = this(Identifiable.randomUID("dataPrepare"))  
+override def copy(extra: ParamMap): DataPrepare = {defaultCopy(extra)}
+
+override def transform(dataset : Dataset[_]) : DataFrame = {
+var ar = dataset.schema.toArray
+var numeric: List[String] = List()
+var textual: List[String] = List()
+
+val num = List(ByteType, DoubleType, DecimalType, FloatType, IntegerType, LongType, ShortType )
+val tex = List(BooleanType, CalendarIntervalType,DateType, NullType, StringType, TimestampType ) 
+ar.foreach(x => 
+if(num.contains(x.dataType))
+ {numeric = numeric.::(x.name)
+ } 
+
+else if(tex.contains(x.dataType))
+      {textual = textual.::(x.name)
+      }
+) 
+numeric = numeric.reverse
+textual = textual.reverse
+
+var r = s"concat_ws(${"\" \""},"
+for(i <- 0 to textual.length -2)
+{r = r.concat(s"${textual(i)}, ") 
+}
+r = r.concat(s"${textual(textual.length -1)}")
+r=r.concat(")")
+
+val df1 = dataset.withColumn("text", expr(r))
+
+def prep(d:String) :String = { d.replace("\"","").toLowerCase()
+      .replaceAll("\n", "")
+      .replaceAll("rt\\s+", "")
+      .replaceAll("\\s+@\\w+", "")
+      .replaceAll("@\\w+", "")
+      .replaceAll("\\s+#\\w+", "")
+      .replaceAll("#\\w+", "")
+      .replaceAll("(?:https?|http?)://[\\w/%.-]+", "")
+      .replaceAll("(?:https?|http?)://[\\w/%.-]+\\s+", "")
+      .replaceAll("(?:https?|http?)//[\\w/%.-]+\\s+", "")
+      .replaceAll("(?:https?|http?)//[\\w/%.-]+", "")
+      .replaceAll("[^\u0000-\uFFFF]","")
+      .replaceAll("(\u00a9|\u00ae|[\u2000-\u3300]|\ud83c[\ud000-\udfff]|\ud83d[\ud000-\udfff]|\ud83e[\ud000-\udfff])","")
+      .trim() 
+}
+ 
+val preProcess = udf(prep _)
+
+val df2 = df1.select(numeric.::("text").map(col):_*).withColumn("text", preProcess(col("text"))).na.drop
+
+val document = new DocumentAssembler()
+    .setInputCol("text")
+    .setOutputCol("document")
+
+val d1 = document.transform(df2)
+
+val token = new com.johnsnowlabs.nlp.annotator.Tokenizer()
+    .setInputCols("document")
+    .setOutputCol("token")
+
+val t1 = token.fit(d1).transform(d1)
+
+val normalizer = new Normalizer()
+    .setInputCols("token")
+    .setOutputCol("normal")
+
+val n1 = normalizer.fit(t1).transform(t1)
+
+val stemmer = new Stemmer()
+    .setInputCols("normal")
+    .setOutputCol("stem")
+
+val s1 = stemmer.transform(n1)
+
+val finisher = new Finisher()
+    .setInputCols("stem")
+    .setOutputCols("final")
+
+val f1 = finisher.transform(s1)
+
+val hashingTF = new HashingTF()
+.setInputCol("final").setOutputCol("rawFeatures").setNumFeatures(10000)
+
+val featurizedData = hashingTF.transform(f1)
+
+val idf = new IDF().setInputCol("rawFeatures").setOutputCol("features")
+
+val idfModel = idf.fit(featurizedData)
+
+val rescaledData = idfModel.transform(featurizedData)
+
+
+val assembler = new VectorAssembler()
+  .setInputCols(numeric.::("features").toArray)
+  .setOutputCol("finalFeatures")
+
+val output = assembler.transform(rescaledData)
+
+val limited  = output.select(col("finalFeatures").alias("features"))
+limited
+}
+
+override def transformSchema(schema: StructType) : StructType = {
+StructType(Array(StructField("features", new org.apache.spark.mllib.linalg.VectorUDT(),true)))
+}
+
+ 
+
+}
